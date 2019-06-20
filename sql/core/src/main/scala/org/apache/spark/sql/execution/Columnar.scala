@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, OnHeapColumnVector, WritableColumnVector}
+import org.apache.spark.sql.execution.vectorized.{ArrowWritableColumnVector, OffHeapColumnVector, OnHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -426,6 +426,7 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val enableOffHeapColumnVector = sqlContext.conf.offHeapColumnVectorEnabled
+    val enableArrowColumnVector = sqlContext.conf.arrowColumnVectorEnabled
     val numInputRows = longMetric("numInputRows")
     val numOutputBatches = longMetric("numOutputBatches")
     // Instead of creating a new config we are reusing columnBatchSize. In the future if we do
@@ -454,15 +455,26 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
           }
 
           override def next(): ColumnarBatch = {
-            cb.setNumRows(0)
-            vectors.foreach(_.reset())
+          if (cb != null) {
+            cb.close()
+            cb = null
+          }
+          val columnVectors : Array[WritableColumnVector] =
+            if (enableArrowColumnVector) {
+              ArrowWritableColumnVector.allocateColumns(numRows, schema).toArray
+            } else if (enableOffHeapColumnVector) {
+              OffHeapColumnVector.allocateColumns(numRows, schema).toArray
+            } else {
+              OnHeapColumnVector.allocateColumns(numRows, schema).toArray
+            }
+
             var rowCount = 0
             while (rowCount < numRows && rowIterator.hasNext) {
               val row = rowIterator.next()
-              converters.convert(row, vectors.toArray)
+              converters.convert(row, columnVectors)
               rowCount += 1
             }
-            cb.setNumRows(rowCount)
+            new ColumnarBatch(columnVectors.toArray, rowCount)
             numInputRows += rowCount
             numOutputBatches += 1
             cb

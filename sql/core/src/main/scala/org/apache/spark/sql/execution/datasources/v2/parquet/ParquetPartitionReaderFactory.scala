@@ -33,7 +33,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader}
-import org.apache.spark.sql.execution.datasources.{PartitionedFile, RecordReaderIterator}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, RecordReaderIterator, VectorizedArrowReaderHandler}
 import org.apache.spark.sql.execution.datasources.parquet._
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.internal.SQLConf
@@ -203,7 +203,7 @@ case class ParquetPartitionReaderFactory(
 
   private def createVectorizedReader(file: PartitionedFile): VectorizedParquetRecordReader = {
     val vectorizedReader = buildReaderBase(file, createParquetVectorizedReader)
-      .asInstanceOf[VectorizedParquetRecordReader]
+                             .asInstanceOf[VectorizedParquetRecordReader]
     vectorizedReader.initBatch(partitionSchema, file.partitionValues)
     vectorizedReader
   }
@@ -215,8 +215,15 @@ case class ParquetPartitionReaderFactory(
       pushed: Option[FilterPredicate],
       convertTz: Option[ZoneId]): VectorizedParquetRecordReader = {
     val taskContext = Option(TaskContext.get())
-    val vectorizedReader = new VectorizedParquetRecordReader(
-      convertTz.orNull, enableOffHeapColumnVector && taskContext.isDefined, capacity)
+    val enableArrowColumnVector = SQLConf.get.arrowColumnVectorEnabled
+    val vectorizedReader = if (enableArrowColumnVector) {
+      VectorizedArrowReaderHandler.get()
+        .getParquetReader(split, convertTz.orNull, false, capacity, dataSchema, readDataSchema)
+        .asInstanceOf[VectorizedParquetRecordReader]
+    } else {
+      new VectorizedParquetRecordReader(
+        convertTz.orNull, enableOffHeapColumnVector && taskContext.isDefined, capacity)
+    }
     val iter = new RecordReaderIterator(vectorizedReader)
     // SPARK-23457 Register a task completion listener before `initialization`.
     taskContext.foreach(_.addTaskCompletionListener[Unit](_ => iter.close()))
