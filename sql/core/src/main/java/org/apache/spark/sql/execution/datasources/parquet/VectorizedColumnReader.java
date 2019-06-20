@@ -36,6 +36,7 @@ import org.apache.parquet.schema.PrimitiveType;
 import org.apache.spark.sql.catalyst.util.DateTimeUtils;
 import org.apache.spark.sql.execution.datasources.SchemaColumnConvertNotSupportedException;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
+import org.apache.spark.sql.execution.vectorized.ArrowWritableColumnVector;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.DecimalType;
 
@@ -172,17 +173,17 @@ public class VectorizedColumnReader {
       if (isCurrentPageDictionaryEncoded) {
         // Read and decode dictionary ids.
         defColumn.readIntegers(
-            num, dictionaryIds, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
-
+          num, dictionaryIds, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
         // TIMESTAMP_MILLIS encoded as INT64 can't be lazily decoded as we need to post process
         // the values to add microseconds precision.
-        if (column.hasDictionary() || (rowId == 0 &&
+        if (!(column instanceof ArrowWritableColumnVector) &&
+            (column.hasDictionary() || (rowId == 0 &&
             (typeName == PrimitiveType.PrimitiveTypeName.INT32 ||
             (typeName == PrimitiveType.PrimitiveTypeName.INT64 &&
               originalType != OriginalType.TIMESTAMP_MILLIS) ||
             typeName == PrimitiveType.PrimitiveTypeName.FLOAT ||
             typeName == PrimitiveType.PrimitiveTypeName.DOUBLE ||
-            typeName == PrimitiveType.PrimitiveTypeName.BINARY))) {
+            typeName == PrimitiveType.PrimitiveTypeName.BINARY)))) {
           // Column vector supports lazy decoding of dictionary values so just set the dictionary.
           // We can't do this if rowId != 0 AND the column doesn't have a dictionary (i.e. some
           // non-dictionary encoded values have already been added).
@@ -263,20 +264,26 @@ public class VectorizedColumnReader {
         if (column.dataType() == DataTypes.IntegerType ||
             DecimalType.is32BitDecimalType(column.dataType())) {
           for (int i = rowId; i < rowId + num; ++i) {
-            if (!column.isNullAt(i)) {
-              column.putInt(i, dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+            if (!column.isNullAt(i) || (column instanceof ArrowWritableColumnVector)) {
+              if (!dictionaryIds.isNullAt(i)) {
+                column.putInt(i, dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+              }
             }
           }
         } else if (column.dataType() == DataTypes.ByteType) {
           for (int i = rowId; i < rowId + num; ++i) {
-            if (!column.isNullAt(i)) {
-              column.putByte(i, (byte) dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+            if (!column.isNullAt(i) || (column instanceof ArrowWritableColumnVector)) {
+              if (!dictionaryIds.isNullAt(i)) {
+                column.putByte(i, (byte) dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+              }
             }
           }
         } else if (column.dataType() == DataTypes.ShortType) {
           for (int i = rowId; i < rowId + num; ++i) {
-            if (!column.isNullAt(i)) {
-              column.putShort(i, (short) dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+            if (!column.isNullAt(i) || (column instanceof ArrowWritableColumnVector)) {
+              if (!dictionaryIds.isNullAt(i)) {
+                column.putShort(i, (short) dictionary.decodeToInt(dictionaryIds.getDictId(i)));
+              }
             }
           }
         } else {

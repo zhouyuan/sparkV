@@ -254,6 +254,13 @@ object SQLConf {
       .booleanConf
       .createWithDefault(false)
 
+  val COLUMN_VECTOR_ARROW_ENABLED =
+    buildConf("spark.sql.columnVector.arrow.enabled")
+      .internal()
+      .doc("When true, use ArrowColumnVector in ColumnarBatch.")
+      .booleanConf
+      .createWithDefault(false)
+
   val PREFER_SORTMERGEJOIN = buildConf("spark.sql.join.preferSortMergeJoin")
     .internal()
     .doc("When true, prefer sort merge join over shuffle hash join.")
@@ -2148,6 +2155,8 @@ class SQLConf extends Serializable with Logging {
   def inMemoryTableScanStatisticsEnabled: Boolean = getConf(IN_MEMORY_TABLE_SCAN_STATISTICS_ENABLED)
 
   def offHeapColumnVectorEnabled: Boolean = getConf(COLUMN_VECTOR_OFFHEAP_ENABLED)
+
+  def arrowColumnVectorEnabled: Boolean = getConf(COLUMN_VECTOR_ARROW_ENABLED)
 
   def columnNameOfCorruptRecord: String = getConf(COLUMN_NAME_OF_CORRUPT_RECORD)
 

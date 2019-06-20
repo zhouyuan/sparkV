@@ -195,7 +195,6 @@ public class VectorizedParquetRecordReader extends SpecificParquetRecordReaderBa
         batchSchema = batchSchema.add(f);
       }
     }
-
     if (memMode == MemoryMode.OFF_HEAP) {
       columnVectors = OffHeapColumnVector.allocateColumns(capacity, batchSchema);
     } else {
