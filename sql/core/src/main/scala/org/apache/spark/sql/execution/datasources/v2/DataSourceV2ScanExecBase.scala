@@ -32,7 +32,10 @@ import org.apache.spark.util.Utils
 trait DataSourceV2ScanExecBase extends LeafExecNode {
 
   override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "scanTime" -> SQLMetrics.createTimingMetric(sparkContext, "scan time")
+  )
+
 
   def scan: Scan
 
@@ -79,9 +82,18 @@ trait DataSourceV2ScanExecBase extends LeafExecNode {
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
-    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map { b =>
-      numOutputRows += b.numRows()
-      b
+    val scanTime = longMetric("scanTime")
+    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map {
+      b =>
+        numOutputRows += b.numRows()
+        val metrics = b.taskId().asInstanceOf[Array[Long]]
+        val elapseTime: Long = if (metrics != null) {
+          metrics(4)/(1000 * 1000)
+        } else {
+          0
+        }
+        scanTime += elapseTime
+        b
     }
   }
 }

@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.parquet;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.arrow.adapter.builder.*;
 import org.apache.arrow.memory.RootAllocator;
@@ -30,6 +31,7 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.api.InitContext;
 import org.apache.parquet.hadoop.api.ReadSupport;
@@ -65,6 +67,7 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
   private ParquetInputSplit split;
   private Schema schema;
   private int[] column_indices;
+  private long[] metrics = new long[5];
 
   public VectorizedParquetArrowReader(
       ParquetArrowReader sharedReader,
@@ -97,7 +100,6 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
   @Override
   public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
       throws IOException, InterruptedException, UnsupportedOperationException {
-    Configuration configuration = taskAttemptContext.getConfiguration();
     ParquetInputSplit split = (ParquetInputSplit)inputSplit;
     this.length = split.getLength();
 
@@ -107,6 +109,7 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     this.reader = new ParquetReader(
       sharedReader.getHdfsReader(), column_indices, split.getStart(), split.getEnd(), capacity);
     this.schema = reader.getSchema();
+    long zero = 0;
   }
 
   @Override
@@ -121,6 +124,7 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
 
   @Override
   public boolean nextBatch() throws IOException {
+    long start = System.nanoTime();
     if (schemaRoot == null) {
       schemaRoot = VectorSchemaRoot.create(schema, sharedReader.getAllocator());
     }
@@ -131,11 +135,16 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     }
     lastReadLength = reader.lastReadLength();
     numLoaded += lastReadLength;
+    metrics[4] = (System.nanoTime() - start);
+    metrics[0] += metrics[4];
+    metrics[3] += 1;
+
     return true;
   }
 
   @Override
   public Object getCurrentValue() {
+    long start = System.nanoTime();
     if (numReaded == numLoaded) {
       return null;
     }
@@ -143,12 +152,22 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     int length = Math.toIntExact(lastReadLength);
     ArrowWritableColumnVector[] columnVectors =
       ArrowWritableColumnVector.loadColumns(length, vector_list);
-    return new ColumnarBatch(columnVectors, length);
+    metrics[1] += (System.nanoTime() - start);
+    return new ColumnarBatch(columnVectors, length, metrics);
   }
 
   @Override
   public void close() throws IOException {
     if (reader != null) {
+    String[] metrics_toString = new String[5];
+    metrics_toString[0] = new String("Fetch NextBatch From HDFS Parquet spent " +
+        TimeUnit.NANOSECONDS.toMillis(metrics[0]) + " ms.");
+    metrics_toString[1] = new String("Convert Arrow Batch to ColumnarBatch spent " +
+        TimeUnit.NANOSECONDS.toMillis(metrics[1]) + " ms.");
+    metrics_toString[2] = new String("Evaluate columnarBatch spent " +
+        TimeUnit.NANOSECONDS.toMillis(metrics[2]) + " ms.");
+    metrics_toString[3] = new String("Loaded " + metrics[3] + " columnarBatch.");
+    LOG.info("File " + sharedReader.getFilePath() + " \nhas metrics(ns) as " + Arrays.toString(metrics_toString));
       reader.close();
       reader = null;
     }
