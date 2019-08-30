@@ -34,6 +34,7 @@ import org.apache.spark.unsafe.types.UTF8String;
 public final class ColumnarBatch implements AutoCloseable {
   private int numRows;
   private final ColumnVector[] columns;
+  private Object taskAttemptId;
 
   // Staging row returned from `getRow`.
   private final ColumnarBatchRow row;
@@ -96,6 +97,8 @@ public final class ColumnarBatch implements AutoCloseable {
    */
   public int numRows() { return numRows; }
 
+  public Object taskId() { return taskAttemptId; }
+
   /**
    * Returns the column at `ordinal`.
    */
@@ -122,6 +125,13 @@ public final class ColumnarBatch implements AutoCloseable {
   public ColumnarBatch(ColumnVector[] columns, int numRows) {
     this.columns = columns;
     this.numRows = numRows;
+    this.row = new ColumnarBatchRow(columns);
+  }
+
+  public ColumnarBatch(ColumnVector[] columns, int numRows, Object taskAttemptId) {
+    this.columns = columns;
+    this.numRows = numRows;
+    this.taskAttemptId = taskAttemptId;
     this.row = new ColumnarBatchRow(columns);
   }
 }

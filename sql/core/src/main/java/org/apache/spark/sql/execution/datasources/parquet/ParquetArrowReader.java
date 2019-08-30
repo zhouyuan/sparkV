@@ -78,5 +78,9 @@ public class ParquetArrowReader {
     return allocator;
   }
 
+  public String getFilePath() {
+    return filePath;
+  }
+
 }
 

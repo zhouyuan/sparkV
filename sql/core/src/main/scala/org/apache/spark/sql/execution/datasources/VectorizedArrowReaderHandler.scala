@@ -23,15 +23,15 @@ import java.util.TimeZone
 import scala.collection.mutable.Map
 
 import org.apache.arrow.adapter.builder._
-import org.apache.parquet.hadoop.ParquetInputSplit
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.memory.RootAllocator
 import org.apache.hadoop.mapreduce.RecordReader
+import org.apache.parquet.hadoop.ParquetInputSplit
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetArrowReader, VectorizedParquetArrowReader}
-import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class VectorizedArrowReaderHandler() extends Logging {
