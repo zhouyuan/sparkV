@@ -27,6 +27,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
@@ -101,6 +102,10 @@ class BasicWriteTaskStatsTracker(hadoopConf: Configuration)
 
   override def newRow(row: InternalRow): Unit = {
     numRows += 1
+  }
+
+  override def newBatch(batch: ColumnarBatch): Unit = {
+    numRows += batch.numRows
   }
 
   override def getFinalStats(): WriteTaskStats = {

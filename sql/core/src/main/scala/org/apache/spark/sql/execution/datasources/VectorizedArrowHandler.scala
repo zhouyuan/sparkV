@@ -22,22 +22,23 @@ import java.util.TimeZone
 
 import scala.collection.mutable.Map
 
-import org.apache.arrow.adapter.builder._
+import org.apache.arrow.adapter.parquet._
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.memory.RootAllocator
-import org.apache.hadoop.mapreduce.RecordReader
+//import org.apache.hadoop.mapreduce.RecordReader
+import org.apache.hadoop.mapreduce.TaskAttemptContext
 import org.apache.parquet.hadoop.ParquetInputSplit
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetArrowReader, VectorizedParquetArrowReader}
+import org.apache.spark.sql.execution.datasources.parquet._
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class VectorizedArrowReaderHandler() extends Logging {
 
   val allocator = new RootAllocator(Long.MAX_VALUE)
-  val reader_handler = new ParquetReaderHandler(allocator)
+  val reader_handler = new ParquetReaderJniWrapper(allocator)
   def getAllocator(): BufferAllocator = allocator
 
   def getParquetReader(
@@ -50,11 +51,8 @@ class VectorizedArrowReaderHandler() extends Logging {
   ): VectorizedParquetArrowReader = synchronized {
     val filePath = split.getPath().toString()
     new VectorizedParquetArrowReader(
-      new ParquetArrowReader(reader_handler, allocator, filePath, this),
+      reader_handler, allocator, filePath,
       convertTz, useOffHeap, capacity, sourceSchema, readDataSchema)
-  }
-
-  def closeParquetReader(filePath: String): Unit = {
   }
 
   def close(): Unit = synchronized {
@@ -62,26 +60,47 @@ class VectorizedArrowReaderHandler() extends Logging {
   }
 }
 
-object VectorizedArrowReaderHandler {
+class VectorizedArrowWriterHandler() extends Logging {
+
+  val writer_handler = new ParquetWriterJniWrapper()
+
+  @throws(classOf[Exception])
+  def getParquetWriter (
+    taskAttemptContext: TaskAttemptContext,
+    path: String
+  ): VectorizedParquetArrowWriter = synchronized {
+    new VectorizedParquetArrowWriter(writer_handler, taskAttemptContext, path)
+  }
+
+  def close(): Unit = synchronized {
+  }
+}
+
+object VectorizedArrowHandler {
 
   var readerHandler: VectorizedArrowReaderHandler = _
+  var writerHandler: VectorizedArrowWriterHandler = _
 
-  def get(): VectorizedArrowReaderHandler = synchronized {
+  def getReader(): VectorizedArrowReaderHandler = synchronized {
     if (readerHandler == null) {
       readerHandler = new VectorizedArrowReaderHandler()
     }
     readerHandler
   }
 
-  def closeParquetReader(filePath: String): Unit = {
-    if (readerHandler != null) {
-      readerHandler.closeParquetReader(filePath)
+  def getWriter(): VectorizedArrowWriterHandler = synchronized {
+    if (writerHandler == null) {
+      writerHandler = new VectorizedArrowWriterHandler()
     }
+    writerHandler
   }
 
   def close(): Unit = {
     if (readerHandler != null) {
       readerHandler.close()
+    }
+    if (writerHandler != null) {
+      writerHandler.close()
     }
   }
 

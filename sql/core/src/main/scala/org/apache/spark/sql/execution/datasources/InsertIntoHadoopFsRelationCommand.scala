@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.SchemaUtils
 
 /**
@@ -74,6 +75,10 @@ case class InsertIntoHadoopFsRelationCommand(
     // partition columns.
     enableDynamicOverwrite && mode == SaveMode.Overwrite &&
       staticPartitions.size < partitionColumns.length
+  }
+
+  override def supportsColumnar(sparkSession: SparkSession, schema: StructType): Boolean = {
+    fileFormat.supportBatch(sparkSession, schema)
   }
 
   override def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
@@ -163,7 +168,7 @@ case class InsertIntoHadoopFsRelationCommand(
         }
       }
 
-      val updatedPartitionPaths =
+      val updatedPartitionPaths = {
         FileFormatWriter.write(
           sparkSession = sparkSession,
           plan = child,
@@ -176,6 +181,7 @@ case class InsertIntoHadoopFsRelationCommand(
           bucketSpec = bucketSpec,
           statsTrackers = Seq(basicWriteJobStatsTracker(hadoopConf)),
           options = options)
+      }
 
 
       // update metastore partition metadata

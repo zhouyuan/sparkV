@@ -25,6 +25,9 @@ import org.apache.spark.sql.types.*;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * This class wraps multiple ColumnVectors as a row-wise table. It provides a row view of this
  * batch so that Spark can access the data row by row. Instance of it is meant to be reused during
@@ -32,6 +35,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  */
 @Evolving
 public final class ColumnarBatch implements AutoCloseable {
+  private static final Logger LOG = LoggerFactory.getLogger(ColumnarBatch.class);
   private int numRows;
   private final ColumnVector[] columns;
   private Object taskAttemptId;

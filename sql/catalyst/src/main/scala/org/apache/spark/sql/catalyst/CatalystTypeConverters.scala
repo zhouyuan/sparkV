@@ -32,6 +32,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized._
 import org.apache.spark.unsafe.types.UTF8String
 
 /**
@@ -286,6 +287,31 @@ object CatalystTypeConverters {
       toScala(row.getStruct(column, structType.size))
   }
 
+  private case class StructColumnarConverter(
+      structType: StructType) extends CatalystTypeConverter[Any, Row, ColumnarBatch] {
+
+    private[this] val converters = structType.fields.map { f => getConverterForType(f.dataType) }
+
+    override def toCatalystImpl(scalaValue: Any): ColumnarBatch = scalaValue match {
+      case row: Row =>
+        val vectors = structType.fields.map(field =>
+            new EmptyColumnVector(field.dataType).asInstanceOf[ColumnVector])
+        new ColumnarBatch(vectors)
+
+      case other => throw new IllegalArgumentException(
+        s"The value (${other.toString}) of the type (${other.getClass.getCanonicalName}) "
+          + s"cannot be converted to ${structType.catalogString}")
+    }
+
+    override def toScala(catalystValue: ColumnarBatch): Row = {
+      throw new UnsupportedOperationException();
+    }
+
+    override def toScalaImpl(row: InternalRow, column: Int): Row = {
+      throw new UnsupportedOperationException();
+    }
+  }
+
   private object StringConverter extends CatalystTypeConverter[Any, String, UTF8String] {
     override def toCatalystImpl(scalaValue: Any): UTF8String = scalaValue match {
       case str: String => UTF8String.fromString(str)
@@ -424,6 +450,12 @@ object CatalystTypeConverters {
     } else {
       getConverterForType(dataType).toCatalyst
     }
+  }
+
+  def createToCatalystColumnarConverter(structType: StructType): Any => Any = {
+    val converter = StructColumnarConverter(structType)
+    converter.toCatalyst
+    //converter.asInstanceOf[CatalystTypeConverter[Any, Any, Any]].toCatalyst
   }
 
   /**

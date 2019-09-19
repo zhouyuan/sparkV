@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import java.util.{Date, UUID}
+import scala.reflect.ClassTag
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileAlreadyExistsException, Path}
@@ -28,6 +29,7 @@ import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -40,6 +42,7 @@ import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{ProjectExec, SortExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
@@ -95,13 +98,19 @@ object FileFormatWriter extends Logging {
       options: Map[String, String])
     : Set[String] = {
 
-    val job = Job.getInstance(hadoopConf)
-    job.setOutputKeyClass(classOf[Void])
-    job.setOutputValueClass(classOf[InternalRow])
-    FileOutputFormat.setOutputPath(job, new Path(outputSpec.outputPath))
-
     val partitionSet = AttributeSet(partitionColumns)
     val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
+    val dataSchema = dataColumns.toStructType
+    val supportBatch = fileFormat.supportBatch(sparkSession, dataSchema)
+    
+    val job = Job.getInstance(hadoopConf)
+    job.setOutputKeyClass(classOf[Void])
+    if (supportBatch) {
+      job.setOutputValueClass(classOf[ColumnarBatch])
+    } else {
+      job.setOutputValueClass(classOf[InternalRow])
+    }
+    FileOutputFormat.setOutputPath(job, new Path(outputSpec.outputPath))
 
     var needConvert = false
     val projectList: Seq[NamedExpression] = plan.output.map {
@@ -125,7 +134,6 @@ object FileFormatWriter extends Logging {
 
     val caseInsensitiveOptions = CaseInsensitiveMap(options)
 
-    val dataSchema = dataColumns.toStructType
     DataSourceUtils.verifySchema(fileFormat, dataSchema)
     // Note: prepareWrite has side effect. It sets "job".
     val outputWriterFactory =
@@ -168,47 +176,91 @@ object FileFormatWriter extends Logging {
     committer.setupJob(job)
 
     try {
-      val rdd = if (orderingMatched) {
-        empty2NullPlan.execute()
-      } else {
-        // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
-        // the physical plan may have different attribute ids due to optimizer removing some
-        // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-        val orderingExpr = bindReferences(
-          requiredOrdering.map(SortOrder(_, Ascending)), outputSpec.outputColumns)
-        SortExec(
-          orderingExpr,
-          global = false,
-          child = empty2NullPlan).execute()
-      }
-
-      // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
-      // partition rdd to make sure we at least set up one write task to write the metadata.
-      val rddWithNonEmptyPartitions = if (rdd.partitions.length == 0) {
-        sparkSession.sparkContext.parallelize(Array.empty[InternalRow], 1)
-      } else {
-        rdd
-      }
-
       val jobIdInstant = new Date().getTime
-      val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
-      sparkSession.sparkContext.runJob(
-        rddWithNonEmptyPartitions,
-        (taskContext: TaskContext, iter: Iterator[InternalRow]) => {
-          executeTask(
-            description = description,
-            jobIdInstant = jobIdInstant,
-            sparkStageId = taskContext.stageId(),
-            sparkPartitionId = taskContext.partitionId(),
-            sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
-            committer,
-            iterator = iter)
-        },
-        rddWithNonEmptyPartitions.partitions.indices,
-        (index, res: WriteTaskResult) => {
-          committer.onTaskCommit(res.commitMsg)
-          ret(index) = res
-        })
+      val ret = if (supportBatch) {
+        val rdd = if (orderingMatched) {
+          empty2NullPlan.executeColumnar()
+        } else {
+          // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
+          // the physical plan may have different attribute ids due to optimizer removing some
+          // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
+          val orderingExpr = bindReferences(
+            requiredOrdering.map(SortOrder(_, Ascending)), outputSpec.outputColumns)
+          SortExec(
+            orderingExpr,
+            global = false,
+            child = empty2NullPlan).executeColumnar()
+        }
+
+        // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
+        // partition rdd to make sure we at least set up one write task to write the metadata.
+        val rddWithNonEmptyPartitions: RDD[ColumnarBatch] = if (rdd.partitions.length == 0) {
+          sparkSession.sparkContext.parallelize(Array.empty[ColumnarBatch], 1)
+        } else {
+          rdd
+        }
+        val _ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
+
+        sparkSession.sparkContext.runJob(
+          rddWithNonEmptyPartitions,
+          (taskContext: TaskContext, iter: Iterator[ColumnarBatch]) => {
+            executeColumnarTask(
+              description = description,
+              jobIdInstant = jobIdInstant,
+              sparkStageId = taskContext.stageId(),
+              sparkPartitionId = taskContext.partitionId(),
+              sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
+              committer,
+              iterator = iter)
+          },
+          rddWithNonEmptyPartitions.partitions.indices,
+          (index, res: WriteTaskResult) => {
+            committer.onTaskCommit(res.commitMsg)
+            _ret(index) = res
+          })
+        _ret
+      } else {
+        val rdd = if (orderingMatched) {
+          empty2NullPlan.execute()
+        } else {
+          // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
+          // the physical plan may have different attribute ids due to optimizer removing some
+          // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
+          val orderingExpr = bindReferences(
+            requiredOrdering.map(SortOrder(_, Ascending)), outputSpec.outputColumns)
+          SortExec(
+            orderingExpr,
+            global = false,
+            child = empty2NullPlan).execute()
+        }
+        // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
+        // partition rdd to make sure we at least set up one write task to write the metadata.
+        val rddWithNonEmptyPartitions: RDD[InternalRow] = if (rdd.partitions.length == 0) {
+          sparkSession.sparkContext.parallelize(Array.empty[InternalRow], 1)
+        } else {
+          rdd
+        }
+        val _ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
+  
+        sparkSession.sparkContext.runJob(
+          rddWithNonEmptyPartitions,
+          (taskContext: TaskContext, iter: Iterator[InternalRow]) => {
+            executeTask(
+              description = description,
+              jobIdInstant = jobIdInstant,
+              sparkStageId = taskContext.stageId(),
+              sparkPartitionId = taskContext.partitionId(),
+              sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
+              committer,
+              iterator = iter)
+          },
+          rddWithNonEmptyPartitions.partitions.indices,
+          (index, res: WriteTaskResult) => {
+            committer.onTaskCommit(res.commitMsg)
+            _ret(index) = res
+          })
+        _ret
+      }
 
       val commitMsgs = ret.map(_.commitMsg)
 
@@ -292,6 +344,64 @@ object FileFormatWriter extends Logging {
     }
   }
 
+  /** Writes data out in a single Spark task. */
+  private def executeColumnarTask(
+      description: WriteJobDescription,
+      jobIdInstant: Long,
+      sparkStageId: Int,
+      sparkPartitionId: Int,
+      sparkAttemptNumber: Int,
+      committer: FileCommitProtocol,
+      iterator: Iterator[ColumnarBatch]): WriteTaskResult = {
+
+    val jobId = SparkHadoopWriterUtils.createJobID(new Date(jobIdInstant), sparkStageId)
+    val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
+    val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
+
+    // Set up the attempt context required to use in the output committer.
+    val taskAttemptContext: TaskAttemptContext = {
+      // Set up the configuration object
+      val hadoopConf = description.serializableHadoopConf.value
+      hadoopConf.set("mapreduce.job.id", jobId.toString)
+      hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
+      hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+      hadoopConf.setBoolean("mapreduce.task.ismap", true)
+      hadoopConf.setInt("mapreduce.task.partition", 0)
+
+      new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
+    }
+
+    committer.setupTask(taskAttemptContext)
+
+    val dataWriter =
+      if (sparkPartitionId != 0 && !iterator.hasNext) {
+        // In case of empty job, leave first partition to save meta for file format like parquet.
+        new EmptyDirectoryDataWriter(description, taskAttemptContext, committer)
+      } else if (description.partitionColumns.isEmpty && description.bucketIdExpression.isEmpty) {
+        new SingleDirectoryDataWriter(description, taskAttemptContext, committer)
+      } else {
+        new DynamicPartitionDataWriter(description, taskAttemptContext, committer)
+      }
+
+    try {
+      Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
+        // Execute the task to write rows out and commit the task.
+        while (iterator.hasNext) {
+          dataWriter.write(iterator.next())
+        }
+        dataWriter.commit()
+      })(catchBlock = {
+        // If there is an error, abort the task
+        dataWriter.abort()
+        logError(s"Job $jobId aborted.")
+      })
+    } catch {
+      case e: FetchFailedException =>
+        throw e
+      case t: Throwable =>
+        throw new SparkException("Task failed while writing rows.", t)
+    }
+  }
   /**
    * For every registered [[WriteJobStatsTracker]], call `processStats()` on it, passing it
    * the corresponding [[WriteTaskStats]] from all executors.

@@ -17,11 +17,13 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import java.io._
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 /**
@@ -62,6 +64,14 @@ abstract class OutputWriter {
    * tables, dynamic partition columns are not included in rows to be written.
    */
   def write(row: InternalRow): Unit
+
+  /**
+   * Persists a columnarBatch.  Invoked on the executor side.  When writing to dynamically partitioned
+   * tables, dynamic partition columns are not included in rows to be written.
+   */
+  def write(columnarBatch: ColumnarBatch): Unit = {
+    throw new UnsupportedOperationException()
+  }
 
   /**
    * Closes the [[OutputWriter]]. Invoked on the executor side after all rows are persisted, before

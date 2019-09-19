@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.execution.streaming.IncrementalExecution
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * A logical command that is executed for its side-effects.  `RunnableCommand`s are
@@ -110,6 +111,17 @@ case class DataWritingCommandExec(cmd: DataWritingCommand, child: SparkPlan)
     rows.map(converter(_).asInstanceOf[InternalRow])
   }
 
+  protected[sql] lazy val sideEffectColumnarResult: Seq[ColumnarBatch] = {
+    val converter = CatalystTypeConverters.createToCatalystColumnarConverter(schema)
+    val batches = cmd.run(sqlContext.sparkSession, child)
+
+    batches.map(converter(_).asInstanceOf[ColumnarBatch])
+  }
+
+  override def supportsColumnar: Boolean = {
+    cmd.supportsColumnar(sqlContext.sparkSession, schema)
+  }
+
   override def output: Seq[Attribute] = cmd.output
 
   override def nodeName: String = "Execute " + cmd.nodeName
@@ -129,6 +141,10 @@ case class DataWritingCommandExec(cmd: DataWritingCommand, child: SparkPlan)
 
   protected override def doExecute(): RDD[InternalRow] = {
     sqlContext.sparkContext.parallelize(sideEffectResult, 1)
+  }
+
+  protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    sqlContext.sparkContext.parallelize(sideEffectColumnarResult, 1)
   }
 }
 

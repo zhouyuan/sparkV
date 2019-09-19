@@ -26,6 +26,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.BasicWriteJobStatsTracker
 import org.apache.spark.sql.execution.datasources.FileFormatWriter
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -56,6 +57,8 @@ trait DataWritingCommand extends Command {
   }
 
   def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row]
+
+  def supportsColumnar(sparkSession: SparkSession, schema: StructType): Boolean = false
 }
 
 object DataWritingCommand {

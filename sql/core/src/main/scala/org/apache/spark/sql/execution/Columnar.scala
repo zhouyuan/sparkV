@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{broadcast, TaskContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters, UnsafeProjection}
@@ -492,7 +493,7 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
  * to/from columnar formatted data.
  */
 case class ApplyColumnarRulesAndInsertTransitions(conf: SQLConf, columnarRules: Seq[ColumnarRule])
-  extends Rule[SparkPlan] {
+  extends Rule[SparkPlan] with Logging {
 
   /**
    * Inserts an transition to columnar formatted data.

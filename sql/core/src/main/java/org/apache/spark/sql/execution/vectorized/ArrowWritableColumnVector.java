@@ -74,6 +74,7 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     for (int i = 0; i < fieldVectors.size(); i++) {
       vectors[i] = new ArrowWritableColumnVector(fieldVectors.get(i), i, capacity, true);
     }
+    //LOG.info("allocateColumns allocator is " + allocator);
     return vectors;
   }
 
