@@ -33,7 +33,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
-import org.apache.spark.sql.execution.datasources.{PartitionedFile, RecordReaderIterator, VectorizedArrowReaderHandler}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, RecordReaderIterator, VectorizedArrowHandler}
 import org.apache.spark.sql.execution.datasources.parquet._
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.internal.SQLConf
@@ -218,7 +218,7 @@ case class ParquetPartitionReaderFactory(
     val taskContext = Option(TaskContext.get())
     val enableArrowColumnVector = SQLConf.get.arrowColumnVectorEnabled
     val vectorizedReader = if (enableArrowColumnVector) {
-      VectorizedArrowReaderHandler.get()
+      VectorizedArrowHandler.getReader()
         .getParquetReader(split, convertTz.orNull, false, capacity, dataSchema, readDataSchema)
         .asInstanceOf[VectorizedParquetRecordReader]
     } else {

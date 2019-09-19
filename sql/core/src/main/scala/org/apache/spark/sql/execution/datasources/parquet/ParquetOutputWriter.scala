@@ -23,13 +23,17 @@ import org.apache.parquet.hadoop.ParquetOutputFormat
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.OutputWriter
+import org.apache.spark.sql.execution.datasources.{OutputWriter, VectorizedArrowHandler}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // NOTE: This class is instantiated and used on executor side only, no need to be serializable.
 class ParquetOutputWriter(path: String, context: TaskAttemptContext)
   extends OutputWriter {
 
-  private val recordWriter: RecordWriter[Void, InternalRow] = {
+  private var recordWriter: RecordWriter[Void, InternalRow] = null
+  private var recordColumnarWriter: RecordWriter[Void, ColumnarBatch] = null
+
+  def createRecordWriter(): RecordWriter[Void, InternalRow] = {
     new ParquetOutputFormat[InternalRow]() {
       override def getDefaultWorkFile(context: TaskAttemptContext, extension: String): Path = {
         new Path(path)
@@ -37,7 +41,27 @@ class ParquetOutputWriter(path: String, context: TaskAttemptContext)
     }.getRecordWriter(context)
   }
 
-  override def write(row: InternalRow): Unit = recordWriter.write(null, row)
+  def createRecordColumnarWriter(): RecordWriter[Void, ColumnarBatch] = {
+    VectorizedArrowHandler.getWriter().getParquetWriter(context, path)
+  }
 
-  override def close(): Unit = recordWriter.close(context)
+  override def write(row: InternalRow): Unit = {
+    if (recordWriter == null) {
+      recordWriter = createRecordWriter()
+    }
+    recordWriter.write(null, row)
+  }
+
+  override def write(columnarBatch: ColumnarBatch): Unit = {
+    if (recordColumnarWriter == null) {
+      recordColumnarWriter = createRecordColumnarWriter()
+    }
+    recordColumnarWriter.write(null, columnarBatch)
+  }
+
+  override def close(): Unit = if (recordColumnarWriter != null) {
+    recordColumnarWriter.asInstanceOf[VectorizedParquetArrowWriter].close(context)
+  } else {
+    recordWriter.close(context)
+  }
 }

@@ -23,12 +23,14 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
 import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -38,7 +40,7 @@ import org.apache.spark.util.SerializableConfiguration
 abstract class FileFormatDataWriter(
     description: WriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
-    committer: FileCommitProtocol) extends DataWriter[InternalRow] {
+    committer: FileCommitProtocol) extends DataWriter[InternalRow] with Logging {
   /**
    * Max number of files a single task writes out due to file size. In most cases the number of
    * files written should be very small. This is just a safe guard to protect some really bad
@@ -64,6 +66,9 @@ abstract class FileFormatDataWriter(
 
   /** Writes a record */
   def write(record: InternalRow): Unit
+
+  /** Writes a columnarBatch */
+  def write(record: ColumnarBatch): Unit
 
   /**
    * Returns the summary of relative information which
@@ -95,6 +100,9 @@ class EmptyDirectoryDataWriter(
     committer: FileCommitProtocol
 ) extends FileFormatDataWriter(description, taskAttemptContext, committer) {
   override def write(record: InternalRow): Unit = {}
+  override def write(record: ColumnarBatch): Unit = {
+    logInfo(s"EmptyDirectoryDataWriter.write(ColumnarBatch)")
+  }
 }
 
 /** Writes data to a single directory (used for non-dynamic-partition writes). */
@@ -138,6 +146,12 @@ class SingleDirectoryDataWriter(
     currentWriter.write(record)
     statsTrackers.foreach(_.newRow(record))
     recordsInFile += 1
+  }
+
+  override def write(record: ColumnarBatch): Unit = {
+    currentWriter.write(record)
+    statsTrackers.foreach(_.newBatch(record))
+    recordsInFile += record.numRows
   }
 }
 
@@ -273,6 +287,10 @@ class DynamicPartitionDataWriter(
     currentWriter.write(outputRow)
     statsTrackers.foreach(_.newRow(outputRow))
     recordsInFile += 1
+  }
+
+  override def write(record: ColumnarBatch): Unit = {
+    logInfo(s"DynamicPartitionDataWriter.write(ColumnarBatch)")
   }
 }
 

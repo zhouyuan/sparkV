@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 /**
@@ -77,6 +78,8 @@ trait WriteTaskStatsTracker {
    * @param row Current data row to be processed.
    */
   def newRow(row: InternalRow): Unit
+
+  def newBatch(batch: ColumnarBatch): Unit
 
   /**
    * Returns the final statistics computed so far.
