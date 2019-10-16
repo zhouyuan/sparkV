@@ -28,6 +28,7 @@ import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.*;
 import org.apache.arrow.vector.holders.NullableVarCharHolder;
+import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.types.pojo.Field;
 
@@ -84,6 +85,15 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
       vectors[i] = new ArrowWritableColumnVector(fieldVectors.get(i), i, capacity, false);
     }
     return vectors;
+  }
+
+  public static ArrowWritableColumnVector[] loadColumns(int capacity, Schema arrowSchema,
+                                                        ArrowRecordBatch recordBatch) {
+    BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+    VectorSchemaRoot root = VectorSchemaRoot.create(arrowSchema, allocator); 
+    VectorLoader loader = new VectorLoader(root);
+    loader.load(recordBatch);
+    return loadColumns(capacity, root.getFieldVectors());
   }
 
   public ArrowWritableColumnVector(ValueVector vector, int ordinal, int capacity, boolean init){
@@ -248,6 +258,85 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
   @Override
   public int numNulls() {
     return accessor.getNullCount();
+  }
+
+  //
+  // APIs dealing with general
+  //
+  public void mergeTo(ArrowWritableColumnVector other) {
+    for (int i = 0; i < capacity; i++) {
+      if (accessor instanceof BooleanAccessor) {
+        if(!isNullAt(i)) {
+          other.put(i, getBoolean(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof ByteAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getByte(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof ShortAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getShort(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof IntAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getInt(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof LongAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getLong(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof FloatAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getFloat(i));
+        } else {
+          other.putNull(i);
+        }
+      } else if (accessor instanceof DoubleAccessor) {
+        if (!isNullAt(i)) {
+          other.put(i, getDouble(i));
+        } else {
+          other.putNull(i);
+        }
+      }
+    }
+  }
+
+  public void put(int rowId, boolean value) {
+    putBoolean(rowId, value);
+  }
+
+  public void put(int rowId, byte value) {
+    putByte(rowId, value);
+  }
+
+  public void put(int rowId, short value) {
+    putShort(rowId, value);
+  }
+
+  public void put(int rowId, int value) {
+    putInt(rowId, value);
+  }
+
+  public void put(int rowId, long value) {
+    putLong(rowId, value);
+  }
+
+  public void put(int rowId, float value) {
+    putFloat(rowId, value);
+  }
+
+  public void put(int rowId, double value) {
+    putDouble(rowId, value);
   }
 
   //
@@ -716,6 +805,11 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     final short getShort(int rowId) {
       return accessor.get(rowId);
     }
+
+    @Override
+    final UTF8String getUTF8String(int rowId) {
+      return UTF8String.fromString(Short.toString(accessor.get(rowId)));
+    }
   }
 
   private static class IntAccessor extends ArrowVectorAccessor {
@@ -736,7 +830,6 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     final UTF8String getUTF8String(int rowId) {
       return UTF8String.fromString(Integer.toString(accessor.get(rowId)));
     }
-      
   }
 
   private static class LongAccessor extends ArrowVectorAccessor {
@@ -751,6 +844,11 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     @Override
     final long getLong(int rowId) {
       return accessor.get(rowId);
+    }
+
+    @Override
+    final UTF8String getUTF8String(int rowId) {
+      return UTF8String.fromString(Long.toString(accessor.get(rowId)));
     }
   }
 
@@ -767,6 +865,11 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     final float getFloat(int rowId) {
       return accessor.get(rowId);
     }
+
+    @Override
+    final UTF8String getUTF8String(int rowId) {
+      return UTF8String.fromString(Float.toString(accessor.get(rowId)));
+    }
   }
 
   private static class DoubleAccessor extends ArrowVectorAccessor {
@@ -781,6 +884,11 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     @Override
     final double getDouble(int rowId) {
       return accessor.get(rowId);
+    }
+
+    @Override
+    final UTF8String getUTF8String(int rowId) {
+      return UTF8String.fromString(Double.toString(accessor.get(rowId)));
     }
   }
 

@@ -455,7 +455,6 @@ object CatalystTypeConverters {
   def createToCatalystColumnarConverter(structType: StructType): Any => Any = {
     val converter = StructColumnarConverter(structType)
     converter.toCatalyst
-    //converter.asInstanceOf[CatalystTypeConverter[Any, Any, Any]].toCatalyst
   }
 
   /**
