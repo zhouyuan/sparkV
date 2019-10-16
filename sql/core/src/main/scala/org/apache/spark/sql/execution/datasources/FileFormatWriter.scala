@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import java.util.{Date, UUID}
+
 import scala.reflect.ClassTag
 
 import org.apache.hadoop.conf.Configuration
@@ -102,7 +103,7 @@ object FileFormatWriter extends Logging {
     val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
     val dataSchema = dataColumns.toStructType
     val supportBatch = fileFormat.supportBatch(sparkSession, dataSchema)
-    
+
     val job = Job.getInstance(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
     if (supportBatch) {
@@ -241,7 +242,7 @@ object FileFormatWriter extends Logging {
           rdd
         }
         val _ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
-  
+
         sparkSession.sparkContext.runJob(
           rddWithNonEmptyPartitions,
           (taskContext: TaskContext, iter: Iterator[InternalRow]) => {

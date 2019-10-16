@@ -16,6 +16,8 @@
  */
 package org.apache.spark.sql.execution.datasources
 
+import java.lang.UnsupportedOperationException
+
 import scala.collection.mutable
 
 import org.apache.hadoop.fs.Path
@@ -23,7 +25,6 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
@@ -40,7 +41,7 @@ import org.apache.spark.util.SerializableConfiguration
 abstract class FileFormatDataWriter(
     description: WriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
-    committer: FileCommitProtocol) extends DataWriter[InternalRow] with Logging {
+    committer: FileCommitProtocol) extends DataWriter[InternalRow] {
   /**
    * Max number of files a single task writes out due to file size. In most cases the number of
    * files written should be very small. This is just a safe guard to protect some really bad
@@ -101,7 +102,8 @@ class EmptyDirectoryDataWriter(
 ) extends FileFormatDataWriter(description, taskAttemptContext, committer) {
   override def write(record: InternalRow): Unit = {}
   override def write(record: ColumnarBatch): Unit = {
-    logInfo(s"EmptyDirectoryDataWriter.write(ColumnarBatch)")
+    throw new UnsupportedOperationException(
+      "EmptyDirectoryDataWriter Columnar write not supported yet.")
   }
 }
 
@@ -290,7 +292,8 @@ class DynamicPartitionDataWriter(
   }
 
   override def write(record: ColumnarBatch): Unit = {
-    logInfo(s"DynamicPartitionDataWriter.write(ColumnarBatch)")
+    throw new UnsupportedOperationException(
+      "DynamicPartitionDataWriter Columnar write not supported yet.")
   }
 }
 

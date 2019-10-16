@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import java.io._
+
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.sql.Row
@@ -66,8 +67,8 @@ abstract class OutputWriter {
   def write(row: InternalRow): Unit
 
   /**
-   * Persists a columnarBatch.  Invoked on the executor side.  When writing to dynamically partitioned
-   * tables, dynamic partition columns are not included in rows to be written.
+   * Persists a columnarBatch.  Invoked on the executor side.  When writing to dynamically
+   * partitioned tables, dynamic partition columns are not included in rows to be written.
    */
   def write(columnarBatch: ColumnarBatch): Unit = {
     throw new UnsupportedOperationException()

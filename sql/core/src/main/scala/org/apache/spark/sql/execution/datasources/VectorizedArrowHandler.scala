@@ -25,7 +25,6 @@ import scala.collection.mutable.Map
 import org.apache.arrow.adapter.parquet._
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.memory.RootAllocator
-//import org.apache.hadoop.mapreduce.RecordReader
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 import org.apache.parquet.hadoop.ParquetInputSplit
 
