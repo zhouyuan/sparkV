@@ -263,49 +263,49 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
   //
   // APIs dealing with general
   //
-  public void mergeTo(ArrowWritableColumnVector other) {
+  public void mergeTo(ArrowWritableColumnVector other, int rowId) {
     for (int i = 0; i < capacity; i++) {
       if (accessor instanceof BooleanAccessor) {
         if(!isNullAt(i)) {
-          other.put(i, getBoolean(i));
+          other.put(rowId, getBoolean(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof ByteAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getByte(i));
+          other.put(rowId, getByte(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof ShortAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getShort(i));
+          other.put(rowId, getShort(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof IntAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getInt(i));
+          other.put(rowId, getInt(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof LongAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getLong(i));
+          other.put(rowId, getLong(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof FloatAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getFloat(i));
+          other.put(rowId, getFloat(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       } else if (accessor instanceof DoubleAccessor) {
         if (!isNullAt(i)) {
-          other.put(i, getDouble(i));
+          other.put(rowId, getDouble(i));
         } else {
-          other.putNull(i);
+          other.putNull(rowId);
         }
       }
     }
