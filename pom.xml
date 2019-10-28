@@ -2085,12 +2085,6 @@
       </dependency>
       <dependency>
         <groupId>org.apache.parquet</groupId>
-        <artifactId>parquet-column</artifactId>
-        <version>${parquet.version}</version>
-        <scope>${parquet.deps.scope}</scope>
-      </dependency>
-      <dependency>
-        <groupId>org.apache.parquet</groupId>
         <artifactId>parquet-hadoop</artifactId>
         <version>${parquet.version}</version>
         <scope>${parquet.deps.scope}</scope>
