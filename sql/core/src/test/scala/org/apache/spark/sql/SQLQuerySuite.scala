@@ -23,6 +23,7 @@ import java.sql.{Date, Timestamp}
 import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.parallel.immutable.ParVector
+import scala.util.Random
 
 import org.apache.spark.{AccumulatorSuite, SparkException}
 import org.apache.spark.scheduler.{SparkListener, SparkListenerJobStart}
@@ -3151,6 +3152,46 @@ class SQLQuerySuite extends QueryTest with SharedSparkSession with AdaptiveSpark
             format,
             df.where('id < 2 and not('id > 10 and 's.contains("bar"))),
             Array(sources.IsNotNull("id"), sources.LessThan("id", 2)))
+        }
+      }
+    }
+  }
+
+  test("reading small blocks using Arrow-based parquet reader") {
+    val blockSize
+    = org.apache.parquet.hadoop.ParquetWriter.DEFAULT_PAGE_SIZE; // 1 MiB. 100 MiB by default.
+
+    def prepareTable(dir: File, numRows: Int, width: Int, useStringForValue: Boolean): Unit = {
+      val selectExpr = (1 to width).map(i => s"value c$i")
+      val valueCol = if (useStringForValue) {
+        monotonically_increasing_id().cast("string")
+      } else {
+        monotonically_increasing_id()
+      }
+      val df = spark.range(numRows).map(_ => Random.nextLong).selectExpr(selectExpr: _*)
+        .withColumn("value", valueCol)
+        .sort("value")
+
+      saveAsTable(df, dir)
+    }
+
+    def saveAsTable(df: DataFrame, dir: File, useDictionary: Boolean = false): Unit = {
+      val parquetPath = dir.getCanonicalPath + "/parquet"
+
+      df.write.mode("overwrite")
+        .option("parquet.block.size", blockSize)
+        .option("compression", "none")
+        .parquet(parquetPath)
+      spark.read.parquet(parquetPath).createOrReplaceTempView("parquetTable")
+    }
+
+    withTempPath { dir =>
+      val numRows = 1024 * 256
+      prepareTable(dir, numRows, 5, true)
+      Seq(false, true).foreach { arrowEnabled =>
+        withSQLConf(SQLConf.COLUMN_VECTOR_ARROW_ENABLED.key -> s"$arrowEnabled") {
+          val rows = spark.sql(s"SELECT * FROM parquetTable WHERE true").collect()
+          assert(rows.length == numRows)
         }
       }
     }
