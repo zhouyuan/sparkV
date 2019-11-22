@@ -263,49 +263,49 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
   //
   // APIs dealing with general
   //
-  public void mergeTo(ArrowWritableColumnVector other, int rowId) {
-    for (int i = 0; i < capacity; i++) {
+  public void mergeTo(ArrowWritableColumnVector other, int rowId, int rowNum) {
+    for (int i = 0; i < rowNum; i++) {
       if (accessor instanceof BooleanAccessor) {
         if(!isNullAt(i)) {
-          other.put(rowId, getBoolean(i));
+          other.put(rowId + i, getBoolean(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof ByteAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getByte(i));
+          other.put(rowId + i, getByte(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof ShortAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getShort(i));
+          other.put(rowId + i, getShort(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof IntAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getInt(i));
+          other.put(rowId + i, getInt(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof LongAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getLong(i));
+          other.put(rowId + i, getLong(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof FloatAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getFloat(i));
+          other.put(rowId + i, getFloat(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       } else if (accessor instanceof DoubleAccessor) {
         if (!isNullAt(i)) {
-          other.put(rowId, getDouble(i));
+          other.put(rowId + i, getDouble(i));
         } else {
-          other.putNull(rowId);
+          other.putNull(rowId + i);
         }
       }
     }
