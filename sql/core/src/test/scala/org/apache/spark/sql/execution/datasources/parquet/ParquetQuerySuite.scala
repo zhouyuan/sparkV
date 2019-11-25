@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.io.File
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
 
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.parquet.hadoop.ParquetOutputFormat
@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtoc
 import org.apache.spark.sql.execution.datasources.parquet.TestingUDT.{NestedStruct, NestedStructUDT, SingleElement}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
+import org.apache.spark.sql.functions.monotonically_increasing_id
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSparkSession
 import org.apache.spark.sql.types._
@@ -845,6 +846,54 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
 
     testMigration(fromTsType = "INT96", toTsType = "TIMESTAMP_MICROS")
     testMigration(fromTsType = "TIMESTAMP_MICROS", toTsType = "INT96")
+  }
+
+  test("Arrow-based reader: predicate pushdown") {
+    val blockSize
+    = org.apache.parquet.hadoop.ParquetWriter.DEFAULT_PAGE_SIZE; // 1 MiB. 100 MiB by default.
+
+    def withParquetTable2(dir: File, segSize: Int, width: Int, useStringForValue: Boolean)
+      (f: => Unit): Unit = {
+      val selectExpr = (1 to width).map(i => s"value c$i")
+      val valueCol = if (useStringForValue) {
+        monotonically_increasing_id().cast("string")
+      } else {
+        monotonically_increasing_id()
+      }
+
+
+      val r = ThreadLocalRandom.current()
+      val df = spark.range(segSize * 2)
+        .map(_ => r.nextLong()).selectExpr(selectExpr: _*)
+        .withColumn("value", valueCol)
+        .sort("value")
+
+      val parquetPath = dir.getCanonicalPath + "/parquet"
+
+      df.write.mode("overwrite")
+        .option("parquet.block.size", blockSize)
+        .option("compression", "none")
+        .parquet(parquetPath)
+      withTempView("parquetTable") {
+        spark.read.parquet(parquetPath).createOrReplaceTempView("parquetTable")
+        f
+      }
+    }
+
+    withTempPath { dir =>
+      val segSize = 1024 * 128
+      withParquetTable2(dir, segSize, 5, false) {
+        Seq(false, true).foreach { arrowEnabled =>
+          withSQLConf(SQLConf.COLUMN_VECTOR_ARROW_ENABLED.key -> s"$arrowEnabled") {
+            var rows = spark.sql(s"SELECT * FROM parquetTable WHERE value < $segSize").collect()
+            assert(rows.length == segSize)
+
+            rows = spark.sql(s"SELECT * FROM parquetTable WHERE value == -1").collect()
+            assert(rows.length == 0)
+          }
+        }
+      }
+    }
   }
 }
 
