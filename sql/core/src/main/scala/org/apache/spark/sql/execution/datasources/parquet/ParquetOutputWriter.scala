@@ -60,8 +60,12 @@ class ParquetOutputWriter(path: String, context: TaskAttemptContext)
   }
 
   override def close(): Unit = if (recordColumnarWriter != null) {
-    recordColumnarWriter.asInstanceOf[VectorizedParquetArrowWriter].close(context)
+    if (recordColumnarWriter != null) {
+      recordColumnarWriter.asInstanceOf[VectorizedParquetArrowWriter].close(context)
+    }
   } else {
-    recordWriter.close(context)
+    if (recordWriter != null) {
+      recordWriter.close(context)
+    }
   }
 }

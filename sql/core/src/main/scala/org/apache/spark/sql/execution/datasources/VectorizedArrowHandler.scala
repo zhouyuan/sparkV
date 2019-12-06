@@ -37,7 +37,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class VectorizedArrowReaderHandler() extends Logging {
 
   val allocator = new RootAllocator(Long.MAX_VALUE)
-  val reader_handler = new ParquetReaderJniWrapper(allocator)
   def getAllocator(): BufferAllocator = allocator
 
   def getParquetReader(
@@ -50,7 +49,7 @@ class VectorizedArrowReaderHandler() extends Logging {
   ): VectorizedParquetArrowReader = synchronized {
     val filePath = split.getPath().toString()
     new VectorizedParquetArrowReader(
-      reader_handler, allocator, filePath,
+      allocator, filePath,
       convertTz, useOffHeap, capacity, sourceSchema, readDataSchema)
   }
 
@@ -61,14 +60,12 @@ class VectorizedArrowReaderHandler() extends Logging {
 
 class VectorizedArrowWriterHandler() extends Logging {
 
-  val writer_handler = new ParquetWriterJniWrapper()
-
   @throws(classOf[Exception])
   def getParquetWriter (
     taskAttemptContext: TaskAttemptContext,
     path: String
   ): VectorizedParquetArrowWriter = synchronized {
-    new VectorizedParquetArrowWriter(writer_handler, taskAttemptContext, path)
+    new VectorizedParquetArrowWriter(taskAttemptContext, path)
   }
 
   def close(): Unit = synchronized {
