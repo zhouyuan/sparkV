@@ -53,7 +53,6 @@ public class VectorizedParquetArrowWriter extends RecordWriter<Void, ColumnarBat
 
   private static final Logger LOG = LoggerFactory.getLogger(VectorizedParquetArrowWriter.class);
   private String path;
-  private ParquetWriterJniWrapper writer_handler;
   private WriteSupport<ColumnarBatch> writeSupport;
   private List<ArrowRecordBatch> recordBatchList = new ArrayList<ArrowRecordBatch>();
 
@@ -62,10 +61,8 @@ public class VectorizedParquetArrowWriter extends RecordWriter<Void, ColumnarBat
   private Configuration configuration;
 
   public VectorizedParquetArrowWriter(
-      ParquetWriterJniWrapper writer_handler,
       TaskAttemptContext taskAttemptContext,
       String path) throws IOException {
-    this.writer_handler = writer_handler;
     this.path = path;
     configuration = taskAttemptContext.getConfiguration();
     WriteSupport<ColumnarBatch> writeSupport = getWriteSupport(configuration);
@@ -75,7 +72,12 @@ public class VectorizedParquetArrowWriter extends RecordWriter<Void, ColumnarBat
     SchemaConverter converter = new SchemaConverter();
     Schema arrowSchema = converter.fromParquet(schema).getArrowSchema();
 
-    writer = new ParquetWriter(writer_handler, path, arrowSchema);
+    String uriPath = this.path;
+    if (uriPath.contains("hdfs")) {
+      uriPath = this.path + "?user=root&replication=1&use_hdfs3=1";
+    }
+    LOG.info("ParquetReader uri path is " + uriPath);
+    writer = new ParquetWriter(uriPath, arrowSchema);
   }
 
   @Override
