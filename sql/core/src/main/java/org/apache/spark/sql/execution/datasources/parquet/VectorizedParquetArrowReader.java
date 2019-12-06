@@ -23,7 +23,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.arrow.adapter.parquet.ParquetReader;
-import org.apache.arrow.adapter.parquet.ParquetReaderJniWrapper;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
@@ -49,7 +48,6 @@ import org.slf4j.LoggerFactory;
 public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader {
 
   private static final Logger LOG = LoggerFactory.getLogger(VectorizedParquetArrowReader.class);
-  private ParquetReaderJniWrapper reader_handler;
   private ParquetReader reader = null;
   private BufferAllocator allocator;
   private String path;
@@ -70,7 +68,6 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
   private long[] metrics = new long[5];
 
   public VectorizedParquetArrowReader(
-    ParquetReaderJniWrapper reader_handler,
     BufferAllocator allocator,
     String path,
     TimeZone convertTz,
@@ -83,7 +80,6 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     this.capacity = capacity;
     this.path = path;
     this.allocator = allocator;
-    this.reader_handler = reader_handler;
 
     this.sourceSchema = sourceSchema;
     this.readDataSchema = readDataSchema;
@@ -119,8 +115,13 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     LOG.info("column_indices is " + Arrays.toString(column_indices));
 
     final int[] rowGroupIndices = filterRowGroups(inputSplit, configuration);
-    this.reader = new ParquetReader(reader_handler, this.path,
-      rowGroupIndices, column_indices, capacity);
+    String uriPath = this.path;
+    if (uriPath.contains("hdfs")) {
+      uriPath = this.path + "?user=root&replication=1&use_hdfs3=1";
+    }
+    LOG.info("ParquetReader uri path is " + uriPath + ", rowGroupIndices is " + Arrays.toString(rowGroupIndices) + ", column_indices is " + Arrays.toString(column_indices));
+    this.reader = new ParquetReader(uriPath,
+      rowGroupIndices, column_indices, capacity, allocator);
   }
 
   @Override
