@@ -112,16 +112,16 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
       }
       ordinal++;
     }
-    LOG.info("column_indices is " + Arrays.toString(column_indices));
 
     final int[] rowGroupIndices = filterRowGroups(inputSplit, configuration);
     String uriPath = this.path;
     if (uriPath.contains("hdfs")) {
       uriPath = this.path + "?user=root&replication=1&use_hdfs3=1";
     }
+    ParquetInputSplit split = (ParquetInputSplit)inputSplit;
     LOG.info("ParquetReader uri path is " + uriPath + ", rowGroupIndices is " + Arrays.toString(rowGroupIndices) + ", column_indices is " + Arrays.toString(column_indices));
     this.reader = new ParquetReader(uriPath,
-      rowGroupIndices, column_indices, capacity, allocator);
+      split.getStart(), split.getEnd(), column_indices, capacity, allocator);
   }
 
   @Override
