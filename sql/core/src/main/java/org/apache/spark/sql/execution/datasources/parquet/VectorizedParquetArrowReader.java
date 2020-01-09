@@ -120,8 +120,13 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     }
     ParquetInputSplit split = (ParquetInputSplit)inputSplit;
     LOG.info("ParquetReader uri path is " + uriPath + ", rowGroupIndices is " + Arrays.toString(rowGroupIndices) + ", column_indices is " + Arrays.toString(column_indices));
+   if (true) {
+     this.reader = new ParquetReader(this.path,
+             rowGroupIndices, column_indices, capacity, allocator);
+   } else {
     this.reader = new ParquetReader(uriPath,
       split.getStart(), split.getEnd(), column_indices, capacity, allocator);
+   }
   }
 
   @Override
@@ -209,8 +214,12 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
     final List<BlockMetaData> unfilteredRowGroups;
 
     try (ParquetFileReader reader = ParquetFileReader.open(
-      HadoopInputFile.fromPath(path, configuration), createOptions(parquetInputSplit, configuration))) {
+            HadoopInputFile.fromPath(path, configuration), createOptionsWithoutRange(configuration))) {
       unfilteredRowGroups = reader.getFooter().getBlocks();
+    }
+
+    try (ParquetFileReader reader = ParquetFileReader.open(
+      HadoopInputFile.fromPath(path, configuration), createOptions(parquetInputSplit, configuration))) {
       filteredRowGroups = reader.getRowGroups();
     }
 
@@ -226,6 +235,11 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
         }
         return dict.get(b);
       }).mapToInt(n -> n).toArray();
+  }
+
+  private ParquetReadOptions createOptionsWithoutRange(Configuration configuration) {
+    return HadoopReadOptions
+            .builder(configuration).build();
   }
 
   private ParquetReadOptions createOptions(ParquetInputSplit split, Configuration configuration) {
