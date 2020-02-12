@@ -315,7 +315,11 @@ private object RowToColumnConverter {
   private object StringConverter extends TypeConverter {
     override def append(row: SpecializedGetters, column: Int, cv: WritableColumnVector): Unit = {
       val data = row.getUTF8String(column).getBytes
-      cv.appendByteArray(data, 0, data.length)
+      if (cv.isInstanceOf[ArrowWritableColumnVector]) {
+        cv.asInstanceOf[ArrowWritableColumnVector].appendString(data, 0, data.length);
+      } else {
+        cv.appendByteArray(data, 0, data.length)
+      }
     }
   }
 

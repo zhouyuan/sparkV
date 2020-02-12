@@ -413,6 +413,10 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     writer.setBytes(rowId, count, src, srcIndex);
   }
 
+  public void appendString(byte[] value, int srcIndex, int count) {
+    writer.appendBytes(value, srcIndex, count);
+  }
+
   @Override
   public byte getByte(int rowId) {
     return accessor.getByte(rowId);
@@ -634,7 +638,7 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
 
   @Override
   public void putArray(int rowId, int offset, int length) {
-    throw new UnsupportedOperationException();
+    writer.setArray(rowId, offset, length);
   }
 
   //
@@ -1166,6 +1170,10 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
     void setByteArray(int rowId, byte[] value, int offset, int length) {
       throw new UnsupportedOperationException();
     }
+
+    void appendBytes(byte[] value, int offset, int length) {
+      throw new UnsupportedOperationException();
+    }
   }
 
   private static class BooleanWriter extends ArrowVectorWriter {
@@ -1519,17 +1527,32 @@ public final class ArrowWritableColumnVector extends WritableColumnVector {
   private static class StringWriter extends ArrowVectorWriter {
 
     private final VarCharVector writer;
-    private final NullableVarCharHolder stringResult = new NullableVarCharHolder();
+    private final BufferAllocator allocator;
+    private int rowId;
 
     StringWriter(VarCharVector vector) {
       super(vector);
       this.writer = vector;
+      this.allocator = writer.getAllocator();
+      this.rowId = 0;
     }
 
     @Override
     final void setNull(int rowId) {
       writer.setNull(rowId);
     }
+
+    @Override
+    final void setBytes(int rowId, int count, byte[] src, int srcIndex) {
+      writer.setSafe(rowId, src, srcIndex, count);
+    }
+
+    @Override
+    final void appendBytes(byte[] value, int offset, int length) {
+      writer.setSafe(rowId, value, offset, length);
+      rowId++;
+    }
+
   }
 
   private static class BinaryWriter extends ArrowVectorWriter {
