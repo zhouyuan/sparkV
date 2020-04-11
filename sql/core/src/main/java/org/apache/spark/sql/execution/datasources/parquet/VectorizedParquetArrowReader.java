@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources.parquet;
 
 import java.io.IOException;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -70,7 +71,7 @@ public class VectorizedParquetArrowReader extends VectorizedParquetRecordReader 
   public VectorizedParquetArrowReader(
     BufferAllocator allocator,
     String path,
-    TimeZone convertTz,
+    ZoneId convertTz,
     boolean useOffHeap,
     int capacity,
     StructType sourceSchema,

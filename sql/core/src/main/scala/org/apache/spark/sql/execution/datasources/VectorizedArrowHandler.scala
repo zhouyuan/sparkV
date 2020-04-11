@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import java.lang.Long
-import java.util.TimeZone
+import java.time.ZoneId
 
 import scala.collection.mutable.Map
 
@@ -41,7 +41,7 @@ class VectorizedArrowReaderHandler() extends Logging {
 
   def getParquetReader(
     split: ParquetInputSplit,
-    convertTz: TimeZone,
+    convertTz: ZoneId,
     useOffHeap: Boolean,
     capacity: Int,
     sourceSchema: StructType,

@@ -440,19 +440,18 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
     // This avoids calling `schema` in the RDD closure, so that we don't need to include the entire
     // plan (this) in the closure.
     val localSchema = this.schema
-    child.execute().mapPartitionsInternal { rowIterator =>
+    child.execute().mapPartitions { rowIterator =>
       if (rowIterator.hasNext) {
         new Iterator[ColumnarBatch] {
           private val converters = new RowToColumnConverter(localSchema)
-          private val vectors: Seq[WritableColumnVector] = if (enableOffHeapColumnVector) {
-            OffHeapColumnVector.allocateColumns(numRows, localSchema)
-          } else {
-            OnHeapColumnVector.allocateColumns(numRows, localSchema)
-          }
-          private val cb: ColumnarBatch = new ColumnarBatch(vectors.toArray)
+          var cb: ColumnarBatch = null
 
           TaskContext.get().addTaskCompletionListener[Unit] { _ =>
-            cb.close()
+            if (cb != null) {
+              cb.close()
+              cb = null
+            }
+
           }
 
           override def hasNext: Boolean = {
@@ -460,18 +459,19 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
           }
 
           override def next(): ColumnarBatch = {
-          if (cb != null) {
-            cb.close()
-            cb = null
-          }
-          val columnVectors : Array[WritableColumnVector] =
-            if (enableArrowColumnVector) {
-              ArrowWritableColumnVector.allocateColumns(numRows, schema).toArray
-            } else if (enableOffHeapColumnVector) {
-              OffHeapColumnVector.allocateColumns(numRows, schema).toArray
-            } else {
-              OnHeapColumnVector.allocateColumns(numRows, schema).toArray
+            if (cb != null) {
+              cb.close()
+              cb = null
             }
+            val columnVectors : Array[WritableColumnVector] =
+              if (enableArrowColumnVector) {
+                logInfo(s"using arrow vector")
+                ArrowWritableColumnVector.allocateColumns(numRows, schema).toArray
+              } else if (enableOffHeapColumnVector) {
+                OffHeapColumnVector.allocateColumns(numRows, schema).toArray
+              } else {
+                OnHeapColumnVector.allocateColumns(numRows, schema).toArray
+              }
 
             var rowCount = 0
             while (rowCount < numRows && rowIterator.hasNext) {
@@ -479,7 +479,7 @@ case class RowToColumnarExec(child: SparkPlan) extends UnaryExecNode {
               converters.convert(row, columnVectors)
               rowCount += 1
             }
-            new ColumnarBatch(columnVectors.toArray, rowCount)
+            cb = new ColumnarBatch(columnVectors.toArray, rowCount)
             numInputRows += rowCount
             numOutputBatches += 1
             cb
